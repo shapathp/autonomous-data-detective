@@ -1,0 +1,11 @@
+order_id,region,product,revenue,quantity
+1001,North,Laptop,75000,2
+1002,South,Phone,25000,3
+1003,North,Tablet,18000,2
+1004,West,Laptop,75000,1
+1005,South,Phone,,4
+1006,East,Tablet,18000,2
+1007,North,Laptop,75000,2
+1008,West,Phone,25000,
+1009,East,Tablet,18000,2
+1009,East,Tablet,18000,2
