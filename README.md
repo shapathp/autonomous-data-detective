@@ -194,3 +194,30 @@ Potential areas for further development include:
 ## Disclaimer
 
 This project is a portfolio and engineering demonstration. Passing automated tests does not guarantee that every possible dataset or model-generated response will be correct. Results should be reviewed before being used for consequential business decisions.
+
+
+## Application Screenshots
+
+### Application Overview
+
+See the application interface and dataset upload workflow.
+
+![Application Overview](docs/screenshots/01-app-overview.png)
+
+### Dataset Profiling
+
+Inspect dataset dimensions, missing values, and available profiling results.
+
+![Dataset Profiling](docs/screenshots/02-data-profiling.png)
+
+### Investigation Summary
+
+View the AI-generated findings and the product with the highest total revenue.
+
+![Investigation Summary](docs/screenshots/03-investigation-summary.png)
+
+### Claim Verification
+
+Review the evidence and verification status associated with the investigation.
+
+![Claim Verification](docs/screenshots/04-claim-verification.png)
