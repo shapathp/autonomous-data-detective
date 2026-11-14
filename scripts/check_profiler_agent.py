@@ -9,9 +9,11 @@ def main() -> None:
             "messages": [
                 (
                     "user",
-                    "Profile data/samples/sales.csv. Report the dataset "
-                    "dimensions, duplicate rows, missing values, and "
-                    "important observations.",
+                    (
+                        "Profile data/samples/sales.csv. Report the dataset "
+                        "dimensions, duplicate rows, missing values, and "
+                        "important observations."
+                    ),
                 )
             ]
         }

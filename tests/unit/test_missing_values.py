@@ -5,7 +5,6 @@ from autonomous_data_detective.tools.missing_values import (
     analyze_missing_values_tool,
 )
 
-
 CSV_PATH = "data/samples/sales.csv"
 
 
@@ -88,3 +87,22 @@ def test_dataset_with_all_missing_values(tmp_path):
     assert result["total_missing_values"] == 4
     assert result["missing_cell_percentage"] == 100.0
     assert result["columns_with_missing_values"] == 2
+
+def test_dataset_with_no_missing_values(tmp_path):
+    csv_file = tmp_path / "complete.csv"
+    csv_file.write_text(
+        "revenue,quantity\n100,2\n200,4\n",
+        encoding="utf-8",
+    )
+
+    result = analyze_missing_values(str(csv_file))
+
+    assert result["total_cells"] == 4
+    assert result["total_missing_values"] == 0
+    assert result["missing_cell_percentage"] == 0.0
+    assert result["columns_with_missing_values"] == 0
+
+    for column in result["columns"]:
+        assert column["missing_count"] == 0
+        assert column["missing_percentage"] == 0.0
+        assert column["recommendation"] == "No missing values detected."

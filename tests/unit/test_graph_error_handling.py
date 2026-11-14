@@ -1,10 +1,12 @@
+from types import SimpleNamespace
+
 import pytest
 
+from autonomous_data_detective.graph.graph import finalize_node
 from autonomous_data_detective.graph.nodes import (
     investigate_node,
     profile_node,
 )
-from autonomous_data_detective.graph.graph import finalize_node
 
 
 class FakeAgent:
@@ -174,4 +176,111 @@ def test_investigator_works_without_profiler_findings(monkeypatch):
     assert "No profiler findings are available." in user_message
     assert "Use the available analysis tools" in user_message
     assert result["investigation_result"] == "Revenue analysis completed."
+    assert result["steps_taken"] == 1
+
+
+def test_profiler_construction_failure_is_recorded(monkeypatch):
+    def fail_to_build_agent():
+        raise RuntimeError("Simulated agent construction failure")
+
+    monkeypatch.setattr(
+        "autonomous_data_detective.graph.nodes.build_profiler_agent",
+        fail_to_build_agent,
+    )
+
+    state = {
+        "csv_path": "data/samples/sales.csv",
+        "steps_taken": 0,
+    }
+
+    result = profile_node(state)
+
+    assert "profile_result" not in result
+    assert result["steps_taken"] == 1
+    assert len(result["errors"]) == 1
+    assert "Profiler failed" in result["errors"][0]
+    assert "Simulated agent construction failure" in result["errors"][0]
+
+
+def test_profiler_converts_non_string_result_to_string(monkeypatch):
+    class FakeAgent:
+        def invoke(self, inputs):
+            return {
+                "messages": [
+                    SimpleNamespace(content={"rows": 10, "columns": 5})
+                ]
+            }
+
+    monkeypatch.setattr(
+        "autonomous_data_detective.graph.nodes.build_profiler_agent",
+        lambda: FakeAgent(),
+    )
+
+    result = profile_node(
+        {
+            "csv_path": "data/samples/sales.csv",
+            "steps_taken": 0,
+        }
+    )
+
+    assert result["profile_result"] == "{'rows': 10, 'columns': 5}"
+    assert result["steps_taken"] == 1
+
+
+def test_investigator_converts_unexpected_structured_response_to_string(
+    monkeypatch,
+):
+    class FakeAgent:
+        def invoke(self, inputs):
+            return {
+                "structured_response": {"answer": "Revenue is highest in North"},
+                "messages": [],
+            }
+
+    monkeypatch.setattr(
+        "autonomous_data_detective.graph.nodes.build_investigator_agent",
+        lambda: FakeAgent(),
+    )
+
+    result = investigate_node(
+        {
+            "user_question": "Which region has the highest revenue?",
+            "csv_path": "data/samples/sales.csv",
+            "steps_taken": 0,
+            "errors": [],
+        }
+    )
+
+    assert result["investigation_result"] == (
+        "{'answer': 'Revenue is highest in North'}"
+    )
+    assert result["steps_taken"] == 1
+
+
+def test_investigator_converts_non_string_message_content_to_string(
+    monkeypatch,
+):
+    class FakeAgent:
+        def invoke(self, inputs):
+            return {
+                "messages": [
+                    SimpleNamespace(content={"answer": 42})
+                ]
+            }
+
+    monkeypatch.setattr(
+        "autonomous_data_detective.graph.nodes.build_investigator_agent",
+        lambda: FakeAgent(),
+    )
+
+    result = investigate_node(
+        {
+            "user_question": "What is the answer?",
+            "csv_path": "data/samples/sales.csv",
+            "steps_taken": 0,
+            "errors": [],
+        }
+    )
+
+    assert result["investigation_result"] == "{'answer': 42}"
     assert result["steps_taken"] == 1

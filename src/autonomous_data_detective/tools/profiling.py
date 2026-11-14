@@ -1,9 +1,9 @@
+import math
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 from langchain.tools import tool
-
 
 
 def profile_dataset(csv_path: str) -> dict[str, Any]:
@@ -43,8 +43,18 @@ def profile_dataset(csv_path: str) -> dict[str, Any]:
             "unique_count": int(series.nunique()),
         }
 
-        if pd.api.types.is_numeric_dtype(series):
+        if (
+            pd.api.types.is_numeric_dtype(series)
+            and not pd.api.types.is_bool_dtype(series)
+        ):
             numeric = series.dropna()
+
+            finite_mask = numeric.map(math.isfinite)
+            non_finite_count = int((~finite_mask).sum())
+            numeric = numeric[finite_mask]
+
+            column_info["non_finite_count"] = non_finite_count
+            column_info["statistics"] = None
 
             if not numeric.empty:
                 column_info["statistics"] = {
@@ -58,8 +68,6 @@ def profile_dataset(csv_path: str) -> dict[str, Any]:
                         else None
                     ),
                 }
-            else:
-                column_info["statistics"] = None
 
         else:
             values = series.dropna().astype(str)
@@ -74,8 +82,8 @@ def profile_dataset(csv_path: str) -> dict[str, Any]:
 
     return {
         "dataset_name": path.name,
-        "row_count": int(len(df)),
-        "column_count": int(len(df.columns)),
+        "row_count": len(df),
+        "column_count": len(df.columns),
         "duplicate_row_count": duplicate_count,
         "columns": columns,
     }

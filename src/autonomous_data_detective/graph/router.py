@@ -1,3 +1,5 @@
+
+import re
 from typing import Literal
 
 from autonomous_data_detective.graph.state import InvestigationState
@@ -12,46 +14,82 @@ def route_question(state: InvestigationState) -> dict:
     if not question:
         return {"route": "clarify"}
 
+    # Dataset profiling and data-quality intent.
     profile_keywords = (
         "profile",
+        "summarize the dataset",
+        "summarize dataset",
         "dataset overview",
         "dataset structure",
-        "missing values",
-        "duplicate rows",
+        "structure of the dataset",
+        "overview of the dataset",
+        "overview of the data",
         "data quality",
+        "missing value",
+        "missing values",
+        "duplicate row",
+        "duplicate rows",
+        "duplicate record",
+        "duplicate records",
+        "duplicates",
         "column details",
+        "columns contain",
+        "dataset summary",
+        "data summary",
     )
 
+    # Analytical intent.
+    # Whole-word matching avoids accidental matches such as
+    # "sum" inside "summarize".
     investigation_keywords = (
         "calculate",
+        "compute",
         "compare",
         "correlation",
         "relationship",
         "highest",
         "lowest",
+        "maximum",
+        "minimum",
+        "largest",
+        "smallest",
+        "least",
+        "greatest",
+        "max",
+        "min",
         "average",
+        "mean",
+        "median",
+        "middle",
+        "mode",
+        "standard deviation",
+        "variance",
         "total",
         "sum",
         "trend",
         "why",
-        "which",
         "how many",
+        "how much",
     )
 
+    def contains_keyword(keyword: str) -> bool:
+        pattern = rf"\b{re.escape(keyword)}\b"
+        return re.search(pattern, question) is not None
+
     wants_profile = any(
-        keyword in question for keyword in profile_keywords
+        contains_keyword(keyword) for keyword in profile_keywords
     )
     wants_investigation = any(
-        keyword in question for keyword in investigation_keywords
+        contains_keyword(keyword) for keyword in investigation_keywords
     )
 
     if wants_profile and wants_investigation:
         route: Route = "both"
     elif wants_profile:
-        route = "profile"
+        route: Route = "profile"
     elif wants_investigation:
-        route = "investigate"
+        route: Route = "investigate"
     else:
-        route = "clarify"
+        route: Route = "clarify"
 
     return {"route": route}

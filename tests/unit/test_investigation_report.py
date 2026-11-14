@@ -1,11 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from autonomous_data_detective.agents.schemas import InvestigationReport
 from autonomous_data_detective.agents.schemas import (
     EvidenceRecord,
     FactualClaim,
+    InvestigationReport,
 )
+
 
 def has_expected_answer(
     report: InvestigationReport,

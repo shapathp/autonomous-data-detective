@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from typing import Any
 
@@ -21,9 +22,9 @@ def compare_groups(
     if not path.is_file():
         raise FileNotFoundError(f"CSV file not found: {path.name}")
 
-    
     df = pd.read_csv(path)
 
+    # Resolve column names case-insensitively.
     column_lookup = {
         column.casefold(): column
         for column in df.columns
@@ -41,7 +42,6 @@ def compare_groups(
     group_by = actual_group_by
     metric = actual_metric
 
-
     if group_by == metric:
         raise ValueError("Grouping column and metric must be different.")
 
@@ -53,15 +53,38 @@ def compare_groups(
             f"Choose from {sorted(allowed_aggregations)}."
         )
 
-    if aggregation != "count" and not pd.api.types.is_numeric_dtype(
-        df[metric]
+    if aggregation != "count" and (
+        not pd.api.types.is_numeric_dtype(df[metric])
+        or pd.api.types.is_bool_dtype(df[metric])
     ):
         raise ValueError(
             f"Metric column '{metric}' must be numeric "
             f"for {aggregation} aggregation."
         )
 
-    valid_df = df.dropna(subset=[group_by, metric])
+    # Keep rows with a valid group and metric.
+    if aggregation == "count":
+        valid_df = df.loc[
+            df[group_by].notna() & df[metric].notna(),
+            [group_by, metric],
+        ]
+    else:
+        numeric_metric = pd.to_numeric(
+            df[metric],
+            errors="coerce",
+        )
+
+        valid_metric = numeric_metric.map(
+            lambda value: (
+                pd.notna(value)
+                and abs(value) != float("inf")
+            )
+        )
+
+        valid_df = df.loc[
+            df[group_by].notna() & valid_metric,
+            [group_by, metric],
+        ]
 
     if valid_df.empty:
         raise ValueError(
@@ -81,6 +104,12 @@ def compare_groups(
     else:
         comparison = grouped.count()
 
+    if not all(math.isfinite(float(value)) for value in comparison):
+        raise ValueError(
+            "Aggregation produced a non-finite result. "
+            "Check the metric values or choose a different aggregation."
+        )
+
     results = [
         {
             "group": str(group),
@@ -89,7 +118,17 @@ def compare_groups(
         for group, value in comparison.items()
     ]
 
+    # Sort groups from highest to lowest aggregated value.
     results.sort(key=lambda item: item["value"], reverse=True)
+
+    highest_value = results[0]["value"]
+
+    # Include every group tied at the maximum value.
+    highest_groups = [
+        item["group"]
+        for item in results
+        if item["value"] == highest_value
+    ]
 
     return {
         "dataset_name": path.name,
@@ -99,8 +138,11 @@ def compare_groups(
         "excluded_rows": int(len(df) - len(valid_df)),
         "group_count": len(results),
         "results": results,
+        # Retained for compatibility with existing consumers.
         "highest_group": results[0]["group"],
-        "highest_value": results[0]["value"],
+        "highest_value": highest_value,
+        # New field: all groups tied for the maximum.
+        "highest_groups": highest_groups,
     }
 
 

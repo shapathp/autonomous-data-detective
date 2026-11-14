@@ -6,7 +6,6 @@ from autonomous_data_detective.agents.investigator import (
 )
 from autonomous_data_detective.agents.schemas import InvestigationReport
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CSV_PATH = PROJECT_ROOT / "data" / "samples" / "sales.csv"
 

@@ -1,9 +1,21 @@
+import math
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from autonomous_data_detective.agents.schemas import (
     EvidenceRecord,
     FactualClaim,
 )
+
+
+def _same_column_name(left: object, right: object) -> bool:
+    """Compare column names ignoring case and surrounding whitespace."""
+
+    return (
+        isinstance(left, str)
+        and isinstance(right, str)
+        and left.strip().casefold() == right.strip().casefold()
+    )
 
 
 def validate_claim(
@@ -51,11 +63,10 @@ def validate_claim(
         "claim_id": claim.claim_id,
         "status": "unverifiable",
         "reason": (
-            f"Automatic validation is not yet implemented for "
+            "Automatic validation is not yet implemented for "
             f"claim type '{claim.claim_type}'."
         ),
     }
-
 
 
 def _validate_group_comparison(
@@ -94,32 +105,30 @@ def _validate_group_comparison(
     for evidence in evidence_records:
         output = evidence.tool_output
 
-        # Confirm that the evidence describes the requested comparison.
-        if (
-            expected_group_column is not None
-            and output.get("group_by") != expected_group_column
+        # Match the requested columns regardless of case or whitespace.
+        if not _same_column_name(
+            output.get("group_by"),
+            expected_group_column,
         ):
             continue
 
-        if output.get("metric") != expected_metric_column:
+        if not _same_column_name(
+            output.get("metric"),
+            expected_metric_column,
+        ):
             continue
 
-        if (
-            expected_aggregation is not None
-            and output.get("aggregation") != expected_aggregation
-        ):
+        if output.get("aggregation") != expected_aggregation:
             continue
 
         relevant_evidence_found = True
 
-        # The tool sorts results in descending order, so its first
-        # result is the highest group for the selected aggregation.
+        # Determine the highest group from the actual tool results.
         results = output.get("results")
 
         if not isinstance(results, list) or not results:
             continue
 
-        
         valid_results = [
             result
             for result in results
@@ -127,25 +136,32 @@ def _validate_group_comparison(
                 isinstance(result, dict)
                 and isinstance(result.get("value"), (int, float))
                 and not isinstance(result.get("value"), bool)
+                and math.isfinite(result["value"])
+                and result.get("group") is not None
             )
         ]
 
         if not valid_results:
             continue
 
-        highest_result = max(
-            valid_results,
-            key=lambda result: result["value"],
+
+        highest_value = max(
+            result["value"]
+            for result in valid_results
         )
 
-        highest_group = highest_result.get("group")
-        highest_value = highest_result.get("value")
+        # A group is a highest group if its value equals the maximum.
+        # This handles multiple groups tied at the maximum value.
+        is_claimed_group_highest = any(
+            result.get("group") == expected_group
+            and _values_match(result["value"], highest_value)
+            for result in valid_results
+        )
 
-
-        # Only verify a highest-group claim when the requested group
-        # and value match the actual top result.
+        # Verify a highest-group claim if the claimed group is tied
+        # for the maximum and the claimed value matches that maximum.
         if (
-            expected_group == highest_group
+            is_claimed_group_highest
             and _values_match(highest_value, expected_value)
         ):
             return {
@@ -158,13 +174,19 @@ def _validate_group_comparison(
                 "evidence_ids": [evidence.evidence_id],
             }
 
-        # A matching non-highest group/value pair is supported, but
-        # does not establish that the group is the highest.
+        # A matching non-highest group/value pair is supported,
+        # but it does not establish that the group is the highest.
         for result in results:
+            if not isinstance(result, dict):
+                continue
+
+            result_value = result.get("value")
+
             if (
-                isinstance(result, dict)
-                and result.get("group") == expected_group
-                and _values_match(result.get("value"), expected_value)
+                result.get("group") == expected_group
+                and isinstance(result_value, (int, float))
+                and not isinstance(result_value, bool)
+                and _values_match(result_value, expected_value)
             ):
                 return {
                     "claim_id": claim.claim_id,
@@ -198,16 +220,106 @@ def _validate_group_comparison(
 
 
 
-
 def _validate_numerical_result(
     claim: FactualClaim,
     evidence_records: list[EvidenceRecord],
 ) -> dict[str, Any]:
-    """Check numerical claims against relevant structured tool evidence."""
+    """Validate numerical claims against structured tool evidence."""
 
     claim_data = claim.claim_data
     expected_value = claim_data.get("value")
-    target_key = claim_data.get("result_key", "value")
+
+    expected_column = (
+        claim_data.get("column_name")
+        or claim_data.get("metric_column")
+        or claim_data.get("column")
+    )
+
+    expected_aggregation = (
+        claim_data.get("aggregation")
+        or claim_data.get("metric")
+    )
+    explicit_result_key = claim_data.get("result_key")
+
+    if explicit_result_key is not None and (
+        not isinstance(explicit_result_key, str)
+        or not explicit_result_key.strip()
+    ):
+        return {
+            "claim_id": claim.claim_id,
+            "status": "unverifiable",
+            "reason": "The requested result key must be a non-empty string.",
+        }
+
+    # Map common aggregation names to a canonical form.
+    aggregation_aliases = {
+        "mean": {"mean", "average"},
+        "average": {"mean", "average"},
+        "median": {"median"},
+        "mode": {"mode"},
+        "std": {
+            "std",
+            "std_dev",
+            "stddev",
+            "standard_deviation",
+            "standard deviation",
+        },
+        "std_dev": {
+            "std",
+            "std_dev",
+            "stddev",
+            "standard_deviation",
+            "standard deviation",
+        },
+        "stddev": {
+            "std",
+            "std_dev",
+            "stddev",
+            "standard_deviation",
+            "standard deviation",
+        },
+        "standard_deviation": {
+            "std",
+            "std_dev",
+            "stddev",
+            "standard_deviation",
+            "standard deviation",
+        },
+        "standard deviation": {
+            "std",
+            "std_dev",
+            "stddev",
+            "standard_deviation",
+            "standard deviation",
+        },
+        "variance": {"variance", "var"},
+        "var": {"variance", "var"},
+        "sum": {"sum"},
+        "min": {"min", "minimum"},
+        "minimum": {"min", "minimum"},
+        "max": {"max", "maximum"},
+        "maximum": {"max", "maximum"},
+        "count": {"count"},
+    }
+
+    def normalize_aggregation(value: object) -> str | None:
+        if not isinstance(value, str):
+            return None
+        return value.strip().casefold().replace("-", "_")
+
+    def aggregation_keys(value: str) -> set[str]:
+        normalized = normalize_aggregation(value)
+        if normalized is None:
+            return set()
+        return aggregation_aliases.get(normalized, {normalized})
+
+    # Determine which output keys can contain the requested result.
+    if explicit_result_key is not None:
+        candidate_keys = [explicit_result_key]
+    elif expected_aggregation is not None:
+        candidate_keys = list(aggregation_keys(expected_aggregation))
+    else:
+        candidate_keys = ["value"]
 
     relevant_evidence_found = False
     conflicting_value_found = False
@@ -215,31 +327,68 @@ def _validate_numerical_result(
     for evidence in evidence_records:
         output = evidence.tool_output
 
-        expected_column = claim_data.get("column_name")
         actual_column = output.get("column_name")
 
-        if expected_column is not None and actual_column != expected_column:
+        if not isinstance(expected_column, str) or not expected_column.strip():
+            if isinstance(actual_column, str) and actual_column.strip():
+                continue
+        elif not _same_column_name(actual_column, expected_column):
             continue
 
-        expected_aggregation = claim_data.get("aggregation")
         actual_aggregation = output.get("aggregation")
 
+        # If the tool explicitly reports its aggregation, check that it
+        # agrees with the claim. Otherwise, identify the statistic by key.
         if (
             expected_aggregation is not None
-            and actual_aggregation != expected_aggregation
+            and actual_aggregation is not None
+            and not (
+                aggregation_keys(expected_aggregation)
+                & aggregation_keys(actual_aggregation)
+            )
         ):
+            continue
+
+
+        statistics = output.get("statistics")
+        matching_values = []
+
+        for key in candidate_keys:
+            if isinstance(statistics, dict) and key in statistics:
+                matching_values.append((key, statistics[key]))
+            elif key in output:
+                matching_values.append((key, output[key]))
+
+        if not matching_values:
             continue
 
         relevant_evidence_found = True
 
-        # Statistics tools nest numerical values under "statistics".
-        statistics = output.get("statistics")
-        if isinstance(statistics, dict) and target_key in statistics:
-            actual_value = statistics[target_key]
-        else:
-            actual_value = output.get(target_key)
+        # Conflicting aliases cannot independently establish one value.
+        non_null_values = [
+            (key, value)
+            for key, value in matching_values
+            if value is not None
+        ]
 
-        # A missing or null result cannot verify or contradict a claim.
+        if not non_null_values:
+            continue
+
+        reference_value = non_null_values[0][1]
+
+        if any(
+            not _values_match(value, reference_value)
+            for _, value in non_null_values[1:]
+        ):
+            conflicting_value_found = True
+            continue
+
+        matched_key, actual_value = non_null_values[0]
+
+
+        relevant_evidence_found = True
+
+        # Missing or null values cannot establish a numerical claim.
         if actual_value is None:
             continue
 
@@ -248,8 +397,8 @@ def _validate_numerical_result(
                 "claim_id": claim.claim_id,
                 "status": "verified",
                 "reason": (
-                    f"The claimed value matches the tool output "
-                    f"field '{target_key}'."
+                    "The claimed value matches the tool output "
+                    f"field '{matched_key}'."
                 ),
                 "evidence_ids": [evidence.evidence_id],
             }
@@ -261,8 +410,8 @@ def _validate_numerical_result(
             "claim_id": claim.claim_id,
             "status": "unverifiable",
             "reason": (
-                "No referenced evidence matches the column and "
-                "aggregation specified by the claim."
+                "No referenced evidence matches the column, aggregation, "
+                "and result field specified by the claim."
             ),
         }
 
@@ -281,7 +430,6 @@ def _validate_numerical_result(
     }
 
 
-
 def _validate_correlation(
     claim: FactualClaim,
     evidence_records: list[EvidenceRecord],
@@ -297,7 +445,10 @@ def _validate_correlation(
     if (
         not expected_column_a
         or not expected_column_b
-        or expected_value is None
+        or isinstance(expected_value, bool)
+        or not isinstance(expected_value, (int, float))
+        or not math.isfinite(expected_value)
+        or not -1 <= expected_value <= 1
     ):
         return {
             "claim_id": claim.claim_id,
@@ -314,15 +465,15 @@ def _validate_correlation(
 
         output = evidence.tool_output
 
-        if (
-            expected_column_a is not None
-            and output.get("column_a") != expected_column_a
+        if not _same_column_name(
+            output.get("column_a"),
+            expected_column_a,
         ):
             continue
 
-        if (
-            expected_column_b is not None
-            and output.get("column_b") != expected_column_b
+        if not _same_column_name(
+            output.get("column_b"),
+            expected_column_b,
         ):
             continue
 
@@ -331,7 +482,12 @@ def _validate_correlation(
 
         actual_value = output.get("correlation")
 
-        if actual_value is None or expected_value is None:
+        if (
+            isinstance(actual_value, bool)
+            or not isinstance(actual_value, (int, float))
+            or not math.isfinite(actual_value)
+            or not -1 <= actual_value <= 1
+        ):
             continue
 
         if _values_match(actual_value, expected_value):
@@ -355,15 +511,50 @@ def _validate_correlation(
         ),
     }
 
+
+
 def _values_match(actual: Any, expected: Any) -> bool:
-    """Compare values without treating booleans as numbers."""
+    """Compare values while accounting for displayed numeric precision."""
 
     if isinstance(actual, bool) or isinstance(expected, bool):
-        return actual == expected
+        return (
+            isinstance(actual, bool)
+            and isinstance(expected, bool)
+            and actual == expected
+        )
 
     if isinstance(actual, (int, float)) and isinstance(
         expected, (int, float)
     ):
-        return abs(actual - expected) <= 1e-9
+        if not math.isfinite(actual) or not math.isfinite(expected):
+            return False
+
+        try:
+            expected_decimal = Decimal(str(expected))
+            exponent = expected_decimal.as_tuple().exponent
+
+            # Allow half a unit at the last displayed decimal place.
+            # Integer claims remain strict apart from floating-point noise.
+            rounding_tolerance = (
+                float(Decimal("0.5") * (Decimal(10) ** exponent))
+                if exponent < 0
+                else 0.0
+            )
+
+            tolerance = max(
+                1e-9,
+                rounding_tolerance,
+                4 * math.ulp(float(expected)),
+            )
+
+        except (InvalidOperation, ValueError, OverflowError):
+            return actual == expected
+
+        return math.isclose(
+            float(actual),
+            float(expected),
+            rel_tol=0.0,
+            abs_tol=tolerance,
+        )
 
     return actual == expected

@@ -1,4 +1,4 @@
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 
 class InvestigationState(TypedDict, total=False):
@@ -16,3 +16,4 @@ class InvestigationState(TypedDict, total=False):
     errors: list[str]
     steps_taken: int
 
+    question_validation: dict[str, Any]

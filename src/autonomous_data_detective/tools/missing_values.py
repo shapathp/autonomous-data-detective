@@ -61,8 +61,8 @@ def analyze_missing_values(csv_path: str) -> dict[str, Any]:
 
     return {
         "dataset_name": path.name,
-        "row_count": int(len(df)),
-        "column_count": int(len(df.columns)),
+        "row_count": len(df),
+        "column_count": len(df.columns),
         "total_cells": total_cells,
         "total_missing_values": total_missing,
         "missing_cell_percentage": round(

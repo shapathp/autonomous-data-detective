@@ -7,10 +7,10 @@ def main():
     agent = build_investigator_agent()
 
     question = (
-    "Using data/samples/sales.csv, calculate the average "
-    "customer satisfaction score and explain whether it "
-    "is related to revenue."
-)
+        "Using data/samples/sales.csv, which product has the "
+        "highest total revenue? Show the revenue comparison "
+        "for each product."
+    )
 
     result = agent.invoke(
         {

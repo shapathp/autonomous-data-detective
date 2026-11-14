@@ -39,7 +39,7 @@ def get_column_statistics(
         "dataset_name": path.name,
         "column_name": column_name,
         "data_type": str(series.dtype),
-        "total_rows": int(len(df)),
+        "total_rows": len(df),
         "missing_count": missing_count,
         "missing_percentage": round(
             missing_count / len(df) * 100, 2
@@ -47,8 +47,16 @@ def get_column_statistics(
         "unique_count": int(series.nunique()),
     }
 
-    if pd.api.types.is_numeric_dtype(series):
+    if (
+        pd.api.types.is_numeric_dtype(series)
+        and not pd.api.types.is_bool_dtype(series)
+    ):
         numeric = series.dropna()
+        finite_mask = numeric.map(lambda value: pd.notna(value) and abs(value) != float("inf"))
+        non_finite_count = int((~finite_mask).sum())
+        numeric = numeric[finite_mask]
+
+        result["non_finite_count"] = non_finite_count
 
         result["statistics"] = None
 
@@ -63,7 +71,13 @@ def get_column_statistics(
                     if len(numeric) > 1
                     else None
                 ),
+                "variance": (
+                    float(numeric.var())
+                    if len(numeric) > 1
+                    else None
+                ),
             }
+
     else:
         values = series.dropna().astype(str)
         result["top_values"] = [

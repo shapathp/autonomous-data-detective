@@ -132,3 +132,47 @@ def test_profile_dataset_rejects_more_than_200_columns(tmp_path):
         match="The dataset exceeds the 200-column limit",
     ):
         profile_dataset(str(csv_file))
+
+
+
+
+def test_csv_with_no_columns_is_rejected(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    import pandas as pd
+
+    from autonomous_data_detective.tools.profiling import profile_dataset
+
+    file_path = tmp_path / "no_columns.csv"
+    file_path.write_text("placeholder", encoding="utf-8")
+
+    fake_df = Mock()
+    fake_df.empty = False
+    fake_df.columns = []
+
+    monkeypatch.setattr(
+        pd,
+        "read_csv",
+        lambda path: fake_df,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="The CSV file contains no columns",
+    ):
+        profile_dataset(str(file_path))
+
+def test_profile_dataset_excludes_non_finite_numeric_values(tmp_path):
+    csv_file = tmp_path / "non_finite.csv"
+    csv_file.write_text(
+        "revenue\n10\n20\ninf\n-inf\n",
+        encoding="utf-8",
+    )
+
+    result = profile_dataset(str(csv_file))
+    revenue = result["columns"]["revenue"]
+
+    assert revenue["statistics"]["mean"] == 15.0
+    assert revenue["statistics"]["min"] == 10.0
+    assert revenue["statistics"]["max"] == 20.0
+    assert revenue["non_finite_count"] == 2

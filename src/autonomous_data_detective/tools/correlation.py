@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,11 @@ def analyze_correlation(
             )
 
     paired = df[[column_a, column_b]].dropna()
+    finite_mask = (
+        paired[column_a].map(lambda value: abs(value) != float("inf"))
+        & paired[column_b].map(lambda value: abs(value) != float("inf"))
+    )
+    paired = paired.loc[finite_mask]
     valid_pairs = len(paired)
     excluded_rows = len(df) - valid_pairs
 
@@ -86,6 +92,11 @@ def analyze_correlation(
         )
 
     value = float(correlation)
+
+    if not math.isfinite(value) or not -1.0 <= value <= 1.0:
+        raise ValueError(
+            "Correlation could not be calculated from these values."
+        )
 
     if abs(value) < 0.3:
         strength = "weak"
