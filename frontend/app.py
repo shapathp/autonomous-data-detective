@@ -1,7 +1,7 @@
 import requests
 import streamlit as st
 
-DEFAULT_API_URL = "http://127.0.0.1:8000"
+DEFAULT_API_URL = "https://autonomous-data-detective-api.onrender.com"
 
 st.set_page_config(
     page_title="Autonomous Data Detective",
